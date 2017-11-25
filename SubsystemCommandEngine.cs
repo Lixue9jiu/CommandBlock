@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Text;
 using System.Reflection;
-using System.Linq;
 using Engine;
 using GameEntitySystem;
 
@@ -82,37 +81,67 @@ namespace Game
                 {
                     case "heal":
                         float amount1 = obj.NextFloat(1);
-                        EnumCreatures(type2, obj, (p) => p.ComponentHealth.Heal(amount1));
+                        obj.Creature.ComponentHealth.Heal(amount1);
                         break;
                     case "injure":
                         float amount = obj.NextFloat(1);
                         string reason = obj.NextString("magic");
-                        EnumCreatures(type2, obj, (p) => p.ComponentHealth.Injure(amount, null, true, reason));
+                        obj.Creature.ComponentHealth.Injure(amount, null, true, reason);
                         break;
                     default:
-                        throw new Exception("usage: health heal/injure @a/r/p [float=1] [string=magic]");
+                        throw new Exception("usage: health heal/injure [float=1] [string=magic]");
                 }
             });
 
             commandLib.Add("strike", (obj) =>
             {
-                var point = obj.GetPoint();
-                subsystemSky.MakeLightningStrike(new Vector3(point));
+                subsystemSky.MakeLightningStrike(obj.NextVector3());
             });
 
             commandLib.Add("setblock", (s) =>
             {
-                var p = s.GetPoint();
+                var p = s.NextPoint3();
                 subsystemTerrain.ChangeCell(p.X, p.Y, p.Z, s.NextInt());
             });
 
             commandLib.Add("placeblock", (obj) =>
             {
-                var p = obj.GetPoint();
+                var p = obj.NextPoint3();
                 var val = obj.NextInt();
                 var b = obj.NextBool(false);
                 var b2 = obj.NextBool(false);
                 subsystemTerrain.DestroyCell(2, p.X, p.Y, p.Z, obj.NextInt(), obj.NextBool(false), obj.NextBool(false));
+            });
+
+            commandLib.Add("fill", (obj) => 
+            {
+                var p1 = obj.NextPoint3();
+                var p2 = obj.NextPoint3();
+                var startx = Math.Min(p1.X, p2.X);
+                var endx = Math.Max(p1.X, p2.X);
+                var starty = Math.Min(p1.Y, p2.Y);
+                var endy = Math.Max(p1.Y, p2.Y);
+                var startz = Math.Min(p1.Z, p2.Z);
+                var endz = Math.Max(p1.Z, p2.Z);
+
+                var val = obj.NextInt();
+
+                for (int x = startx; x < endx; x++)
+                {
+                    for (int y = starty; y < endy; y++)
+                    {
+                        for (int z = startz; z < endz; z++)
+                        {
+                            subsystemTerrain.Terrain.SetCellValueFast(x, y, z, val);
+                            var c = subsystemTerrain.Terrain.GetChunkAtCell(x, z);
+                            if (c != null)
+                            {
+                                c.ModificationCounter++;
+                                subsystemTerrain.TerrainUpdater.DowngradeChunkNeighborhoodState(c.Coords, 1, TerrainChunkState.InvalidLight, false);
+                            }
+                        }
+                    }
+                }
             });
 
             commandLib.Add("time", (obj) =>
@@ -143,51 +172,88 @@ namespace Game
 
                 EnumCreatures(type, obj, (a) =>
                 {
-                    var p = ToPoint3(a.ComponentBody.Position);
-                    RunCommand(p, command);
+                    RunCommand(a, command);
                 });
             });
 
             commandLib.Add("setdata", (s) =>
             {
-                var type = s.NextString();
-                var component = s.NextString();
-                var value = s.NextString();
-                Action<ComponentCreature> a;
-                PropertyInfo p;
-                if (creatureDatas.TryGetValue(component, out int i))
+                while(s.HasNext())
                 {
-                    switch (i) {
-                        case 0:
-                            p = typeof(ComponentLocomotion).GetProperty(component);
-                            a = (obj) =>
-                            {
-                                p.SetValue(obj.ComponentLocomotion, Convert.ChangeType(value, p.PropertyType), null);
-                            };
-                            break;
-                        case 1:
-                            p = typeof(ComponentHealth).GetProperty(component);
-                            a = (obj) =>
-                            {
-                                p.SetValue(obj.ComponentHealth, Convert.ChangeType(value, p.PropertyType), null);
-                            };
-                            break;
-                        case 2:
-                            p = typeof(ComponentBody).GetProperty(component);
-                            a = (obj) =>
-                            {
-                                p.SetValue(obj.ComponentBody, Convert.ChangeType(value, p.PropertyType), null);
-                            };
-                            break;
-                        default:
-                            throw new Exception("impossible creature data error");
+                    var type = s.NextString();
+                    var component = s.NextString();
+                    var value = s.NextString();
+                    PropertyInfo p;
+                    if (creatureDatas.TryGetValue(component, out int i))
+                    {
+                        switch (i)
+                        {
+                            case 0:
+                                p = typeof(ComponentLocomotion).GetProperty(component);
+                                p.SetValue(s.Creature.ComponentLocomotion, ChangeType(value, p.PropertyType), null);
+                                break;
+                            case 1:
+                                p = typeof(ComponentHealth).GetProperty(component);
+                                p.SetValue(s.Creature.ComponentHealth, ChangeType(value, p.PropertyType), null);
+                                break;
+                            case 2:
+                                p = typeof(ComponentBody).GetProperty(component);
+                                p.SetValue(s.Creature.ComponentBody, ChangeType(value, p.PropertyType), null);
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        throw new Exception(component + " is not a creature data");
                     }
                 }
-                else
+            });
+
+            commandLib.Add("gameinfo", (s) =>
+            {
+                var setting = s.NextString();
+                var val = s.NextString();
+                var f = typeof(WorldSettings).GetField(setting);
+                if (f != null)
                 {
-                    throw new Exception(component + " is not a creature data");
+                    f.SetValue(GameManager.WorldInfo.WorldSettings, ChangeType(val, f.FieldType));
                 }
-                EnumCreatures(type, s, a);
+            });
+
+            commandLib.Add("summon", (s) =>
+            {
+                var name = s.NextString();
+                var position = s.NextVector3();
+                var rotation = s.NextFloat(0);
+                Entity entity = DatabaseManager.CreateEntity(Project, creatureTemplateNames[name], true);
+                entity.FindComponent<ComponentBody>(true).Position = position;
+                entity.FindComponent<ComponentBody>(true).Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, rotation);
+                entity.FindComponent<ComponentSpawn>(true).SpawnDuration = 0.25f;
+                Project.AddEntity(entity);
+            });
+
+            commandLib.Add("tp", s => s.Creature.ComponentBody.Position = s.NextVector3());
+
+            commandLib.Add("additem", s =>
+            {
+                var position = s.NextVector3();
+                var val = s.NextInt();
+                var count = s.NextInt(1);
+                Vector3? speed = null;
+                if (s.HasNext())
+                {
+                    speed = s.NextVector3();
+                }
+                Project.FindSubsystem<SubsystemPickables>(true).AddPickable(s.NextInt(), s.NextInt(1), position, speed, null);
+            });
+
+            commandLib.Add("give", s =>
+            {
+                var enumType = s.NextString();
+                var val = s.NextInt();
+                var count = s.NextInt(1);
+
+                FindPlayer(enumType, s, (p) => ComponentInventoryBase.AcquireItems(p.ComponentMiner.Inventory, val, count));
             });
         }
 
@@ -300,29 +366,23 @@ namespace Game
         {
             foreach (PropertyInfo p in typeof(ComponentLocomotion).GetRuntimeProperties())
             {
-                Type t = p.PropertyType;
-                if (t.Equals(typeof(float)) || t.Equals(typeof(bool)))
+                if (Engine.Serialization.HumanReadableConverter.IsTypeSupported(p.PropertyType))
                 {
                     creatureDatas[p.Name] = 0;
-                    Log.Information(p.Name);
                 }
             }
             foreach (PropertyInfo p in typeof(ComponentHealth).GetRuntimeProperties())
             {
-                Type t = p.PropertyType;
-                if (t.Equals(typeof(float)) || t.Equals(typeof(bool)))
+                if (Engine.Serialization.HumanReadableConverter.IsTypeSupported(p.PropertyType))
                 {
                     creatureDatas[p.Name] = 1;
-                    Log.Information(p.Name);
                 }
             }
             foreach (PropertyInfo p in typeof(ComponentBody).GetRuntimeProperties())
             {
-                Type t = p.PropertyType;
-                if (t.Equals(typeof(float)) || t.Equals(typeof(bool)))
+                if (Engine.Serialization.HumanReadableConverter.IsTypeSupported(p.PropertyType))
                 {
                     creatureDatas[p.Name] = 2;
-                    Log.Information(p.Name);
                 }
             }
         }
@@ -659,6 +719,11 @@ namespace Game
         {
             return new Point3((int)(v.X + 0.5f), (int)(v.Y + 0.5f), (int)(v.Z - 0.5f));
         }
+
+        public static object ChangeType(string str, Type t)
+        {
+            return Engine.Serialization.HumanReadableConverter.ConvertFromString(t, str);
+        }
     }
 
     struct OffsetCache
@@ -733,13 +798,25 @@ namespace Game
             {
                 if (hasCreature)
                 {
-                    return SubsystemCommandEngine.ToPoint3(Creature.ComponentBody.Position);
+                    return SubsystemCommandEngine.ToPoint3(m_creature.ComponentBody.Position);
                 }
                 return exePosition.Value;
             }
         }
 
-        public readonly ComponentCreature Creature;
+        public ComponentCreature Creature
+        {
+            get
+            {
+                if (hasCreature)
+                {
+                    return m_creature;
+                }
+                throw new Exception("command is not executed by a creature");
+            }
+        }
+        readonly ComponentCreature m_creature;
+
         public string Name
         {
             get
@@ -770,7 +847,7 @@ namespace Game
         public CommandStream(ComponentCreature creature, Point3? exePosition, string command)
         {
             m_commands = GetCommands(command);
-            Creature = creature;
+            m_creature = creature;
             this.exePosition = exePosition;
             hasCreature = creature != null;
         }
@@ -877,12 +954,80 @@ namespace Game
 
         public Point3 PeekPoint()
         {
-            var p = GetPoint();
+            var p = NextPoint3();
             m_position -= 3;
             return p;
         }
 
-        public Point3 GetPoint()
+        public Vector3 NextVector3()
+        {
+            Vector3 result = new Vector3();
+            string str;
+
+            Vector3 src;
+            if (hasCreature)
+            {
+                src = m_creature.ComponentBody.Position;
+            }
+            else
+            {
+                src = new Vector3(exePosition.Value);
+            }
+
+            str = NextString();
+            if (str[0] == '~')
+            {
+                if (str.Length == 1)
+                {
+                    result.X = src.X;
+                }
+                else
+                {
+                    result.X = src.X + ExceptionHelper.ParseFloat(str.Substring(1));
+                }
+            }
+            else
+            {
+                result.X = ExceptionHelper.ParseFloat(str);
+            }
+
+            str = NextString();
+            if (str[0] == '~')
+            {
+                if (str.Length == 1)
+                {
+                    result.Y = src.Y;
+                }
+                else
+                {
+                    result.Y = src.Y + ExceptionHelper.ParseFloat(str.Substring(1));
+                }
+            }
+            else
+            {
+                result.Y = ExceptionHelper.ParseFloat(str);
+            }
+
+            str = NextString();
+            if (str[0] == '~')
+            {
+                if (str.Length == 1)
+                {
+                    result.Z = src.Z;
+                }
+                else
+                {
+                    result.Z = src.Z + ExceptionHelper.ParseFloat(str.Substring(1));
+                }
+            }
+            else
+            {
+                result.Z = ExceptionHelper.ParseFloat(str);
+            }
+            return result;
+        }
+
+        public Point3 NextPoint3()
         {
             Point3 result = new Point3();
             string str;
