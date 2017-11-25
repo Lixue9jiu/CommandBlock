@@ -21,9 +21,4 @@ namespace Game
             return ElectricConnectorType.Input;
         }
     }
-
-	public class CommandHelper : FlatBlock
-	{
-		public const int Index = 502;
-	}
 }
