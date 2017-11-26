@@ -9,13 +9,15 @@ namespace Game
 {
     public class SubsystemCommandEngine : Subsystem
     {
+        public readonly Dictionary<string, string> creatureTemplateNames = new Dictionary<string, string>();
+        public readonly Dictionary<string, int> blockIds = new Dictionary<string, int>();
+
         SubsystemCreatureSpawn subsystemCreature;
         SubsystemPlayers subsystemPlayers;
         SubsystemTerrain subsystemTerrain;
         SubsystemSky subsystemSky;
         SubsystemTimeOfDay subsystemTime;
         readonly Dictionary<string, Action<CommandStream>> commandLib = new Dictionary<string, Action<CommandStream>>();
-        readonly Dictionary<string, string> creatureTemplateNames = new Dictionary<string, string>();
         readonly Dictionary<string, Point3> storedPoints = new Dictionary<string, Point3>();
 
         readonly Dictionary<string, int> creatureDatas = new Dictionary<string, int>();
@@ -38,6 +40,68 @@ namespace Game
                 storedPoints[pair.Key] = p;
             }
 
+            InitCommands();
+        }
+
+        protected override void Save(TemplatesDatabase.ValuesDictionary valuesDictionary)
+        {
+            base.Save(valuesDictionary);
+            var dict = new TemplatesDatabase.ValuesDictionary();
+            valuesDictionary.SetValue("Points", dict);
+            foreach (KeyValuePair<string, Point3> i in storedPoints)
+            {
+                dict.SetValue(i.Key, i.Value);
+            }
+        }
+
+        public void SetPoint(string name, Point3 p)
+        {
+            storedPoints[name] = p;
+        }
+
+        public bool RemovePoint(string name)
+        {
+            return storedPoints.Remove(name);
+        }
+
+        public bool RunCommand(ComponentCreature creature, string command)
+        {
+            return RunCommand(new CommandStream(creature, null, command));
+        }
+
+        public bool RunCommand(Point3 position, string command)
+        {
+            return RunCommand(new CommandStream(null, position, command));
+        }
+
+        bool RunCommand(CommandStream stream)
+        {
+            try
+            {
+                if (commandLib.TryGetValue(stream.Name, out Action<CommandStream> action))
+                {
+                    action.Invoke(stream);
+                    return true;
+                }
+                throw new Exception("command not found");
+            }
+            catch (Exception e)
+            {
+                if (!(e is SilenceException))
+                {
+                    Log.Error(string.Format("{0} : {1}\n{2}", stream.Name, e.Message, e.StackTrace));
+                    string str = string.Format("{0} : {1}", stream.Name, e.Message);
+                    foreach (ComponentPlayer p in subsystemPlayers.ComponentPlayers)
+                    {
+                        p.ComponentGui.DisplaySmallMessage(str, false, false);
+                    }
+                }
+                return false;
+            }
+        }
+
+        void InitCommands()
+        {
             commandLib.Add("msg", (obj) =>
             {
                 string type = obj.NextString();
@@ -113,7 +177,7 @@ namespace Game
                 subsystemTerrain.DestroyCell(2, p.X, p.Y, p.Z, obj.NextInt(), obj.NextBool(false), obj.NextBool(false));
             });
 
-            commandLib.Add("fill", (obj) => 
+            commandLib.Add("fill", (obj) =>
             {
                 var p1 = obj.NextPoint3();
                 var p2 = obj.NextPoint3();
@@ -178,7 +242,7 @@ namespace Game
 
             commandLib.Add("setdata", (s) =>
             {
-                while(s.HasNext())
+                while (s.HasNext())
                 {
                     var type = s.NextString();
                     var component = s.NextString();
@@ -257,60 +321,16 @@ namespace Game
             });
         }
 
-        protected override void Save(TemplatesDatabase.ValuesDictionary valuesDictionary)
+        void LoadBlockIds()
         {
-            base.Save(valuesDictionary);
-            var dict = new TemplatesDatabase.ValuesDictionary();
-            valuesDictionary.SetValue("Points", dict);
-            foreach (KeyValuePair<string, Point3> i in storedPoints)
+            foreach (Block b in BlocksManager.Blocks)
             {
-                dict.SetValue(i.Key, i.Value);
-            }
-        }
-
-        public void SetPoint(string name, Point3 p)
-        {
-            storedPoints[name] = p;
-        }
-
-        public bool RemovePoint(string name)
-        {
-            return storedPoints.Remove(name);
-        }
-
-        public bool RunCommand(ComponentCreature creature, string command)
-        {
-            return RunCommand(new CommandStream(creature, null, command));
-        }
-
-        public bool RunCommand(Point3 position, string command)
-        {
-            return RunCommand(new CommandStream(null, position, command));
-        }
-
-        bool RunCommand(CommandStream stream)
-        {
-            try
-            {
-                if (commandLib.TryGetValue(stream.Name, out Action<CommandStream> action))
+                foreach (int id in b.GetCreativeValues())
                 {
-                    action.Invoke(stream);
-                    return true;
+                    var name = b.GetDisplayName(subsystemTerrain, id).Replace(' ', '_').ToLower();
+                    blockIds[name] = id;
                 }
-                throw new Exception("command not found");
-            }
-            catch (Exception e)
-            {
-                if (!(e is SilenceException))
-                {
-                    Log.Error(string.Format("{0} : {1}\n{2}", stream.Name, e.Message, e.StackTrace));
-                    string str = string.Format("{0} : {1}", stream.Name, e.Message);
-                    foreach (ComponentPlayer p in subsystemPlayers.ComponentPlayers)
-                    {
-                        p.ComponentGui.DisplaySmallMessage(str, false, false);
-                    }
-                }
-                return false;
+                blockIds[b.DefaultDisplayName.Replace(' ', '_').ToLower()] = b.BlockIndex;
             }
         }
 

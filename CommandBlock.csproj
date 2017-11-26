@@ -35,6 +35,7 @@
     <Compile Include="CommandBlock\SubsystemCommandEngine.cs" />
     <Compile Include="CommandHelper\SubsystemCommandHelperBehavior.cs" />
     <Compile Include="CommandHelper\CommandHelper.cs" />
+    <Compile Include="CommandHelper\CommandHelperDialog.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Engine">
@@ -54,6 +55,12 @@
     </Reference>
     <Reference Include="Mono.Android">
       <HintPath>..\_GameSource\unknown\assemblies\Mono.Android.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Xml">
+      <HintPath>..\_GameSource\unknown\assemblies\System.Xml.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Xml.Linq">
+      <HintPath>..\_GameSource\unknown\assemblies\System.Xml.Linq.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
