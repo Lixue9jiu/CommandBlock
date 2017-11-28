@@ -190,19 +190,28 @@ namespace Game
 
                 var val = obj.NextInt();
 
-                for (int x = startx; x < endx; x++)
+                for (int x = startx; x <= endx; x++)
                 {
-                    for (int y = starty; y < endy; y++)
+                    for (int y = starty; y <= endy; y++)
                     {
-                        for (int z = startz; z < endz; z++)
+                        for (int z = startz; z <= endz; z++)
                         {
                             subsystemTerrain.Terrain.SetCellValueFast(x, y, z, val);
-                            var c = subsystemTerrain.Terrain.GetChunkAtCell(x, z);
-                            if (c != null)
-                            {
-                                c.ModificationCounter++;
-                                subsystemTerrain.TerrainUpdater.DowngradeChunkNeighborhoodState(c.Coords, 1, TerrainChunkState.InvalidLight, false);
-                            }
+                        }
+                    }
+                }
+
+                var startChunk = Terrain.ToChunk(startx, startz);
+                var endChunk = Terrain.ToChunk(endx, endz);
+
+                for (int x = startChunk.X; x <= endChunk.X; x++)
+                {
+                    for (int y = startChunk.Y; y <= endChunk.Y; y++)
+                    {
+                        var c = subsystemTerrain.Terrain.GetChunkAtCoords(x, y);
+                        if (c != null)
+                        {
+                            subsystemTerrain.TerrainUpdater.DowngradeChunkNeighborhoodState(c.Coords, 1, TerrainChunkState.InvalidLight, false);
                         }
                     }
                 }
@@ -244,7 +253,6 @@ namespace Game
             {
                 while (s.HasNext())
                 {
-                    var type = s.NextString();
                     var component = s.NextString();
                     var value = s.NextString();
                     PropertyInfo p;
@@ -737,7 +745,7 @@ namespace Game
 
         public static Point3 ToPoint3(Vector3 v)
         {
-            return new Point3((int)(v.X + 0.5f), (int)(v.Y + 0.5f), (int)(v.Z - 0.5f));
+            return Terrain.ToCell(v);
         }
 
         public static object ChangeType(string str, Type t)
