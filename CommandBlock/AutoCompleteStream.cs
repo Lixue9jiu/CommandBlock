@@ -15,11 +15,14 @@ namespace Game
             void ProvideFloat();
             void ProvideString();
             void ProvideEnum(IEnumerable<string> enums);
+            void ProvideEnumDiscription(Dictionary<string, string> discriptionToName);
             void CompleteEnum(string str, IEnumerable<string> enums);
         }
 
         readonly IAutoCompleteReciver reciver;
         readonly CommandStream stream;
+
+        bool recommandNewArg;
 
         public CommandStream CommandStream
         {
@@ -37,9 +40,10 @@ namespace Game
             }
         }
 
-        public AutoCompleteStream(CommandStream stream, IAutoCompleteReciver reciver)
+        public AutoCompleteStream(string command, IAutoCompleteReciver reciver)
         {
-            this.stream = stream;
+            recommandNewArg = command.Last() == ' ';
+            stream = new CommandStream(null, Engine.Point3.Zero, command);
             this.reciver = reciver;
         }
 
@@ -53,7 +57,8 @@ namespace Game
             {
                 if (e is ArgNotFoundException)
                 {
-                    reciver.ProvideAny(t);
+                    if (recommandNewArg)
+                        reciver.ProvideAny(t);
                 }
                 else
                 {
@@ -72,7 +77,8 @@ namespace Game
             }
             catch (ArgNotFoundException)
             {
-                reciver.ProvideString();
+                if (recommandNewArg)
+                    reciver.ProvideString();
                 throw new SilentException();
             }
             return this;
@@ -92,7 +98,8 @@ namespace Game
                 }
                 else if (e is ArgNotFoundException)
                 {
-                    reciver.ProvideBool();
+                    if (recommandNewArg)
+                        reciver.ProvideBool();
                 }
                 throw new SilentException();
             }
@@ -113,7 +120,8 @@ namespace Game
                 }
                 else if (e is ArgNotFoundException)
                 {
-                    reciver.ProvideInt();
+                    if (recommandNewArg)
+                        reciver.ProvideInt();
                 }
                 throw new SilentException();
             }
@@ -134,7 +142,8 @@ namespace Game
                 }
                 else if (e is ArgNotFoundException)
                 {
-                    reciver.ProvideFloat();
+                    if (recommandNewArg)
+                        reciver.ProvideFloat();
                 }
                 throw new SilentException();
             }
@@ -146,13 +155,13 @@ namespace Game
             try
             {
                 var str = stream.NextString();
-                if (!strs.Contains(str))
+                if (!stream.HasNext && !recommandNewArg)
                 {
                     reciver.CompleteEnum(str, strs);
                     throw new SilentException();
                 }
             }
-            catch (ArgumentException)
+            catch (ArgNotFoundException)
             {
                 reciver.ProvideEnum(strs);
                 throw new SilentException();

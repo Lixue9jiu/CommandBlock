@@ -27,7 +27,7 @@ namespace Game
         }
 
         readonly Dictionary<string, CommandDefination> commands = new Dictionary<string, CommandDefination>();
-        readonly Dictionary<string, string> commandUsage = new Dictionary<string, string>();
+        static readonly Dictionary<string, string> commandUsage = new Dictionary<string, string>();
 
         readonly Dictionary<string, Point3> storedPoints = new Dictionary<string, Point3>();
 
@@ -117,10 +117,10 @@ namespace Game
         {
             if (command == string.Empty)
             {
-                reciver.ProvideEnum(commands.Keys);
+                reciver.ProvideEnumDiscription(commandUsage);
                 return;
             }
-            var autoComplete = new AutoCompleteStream(new CommandStream(null, Point3.Zero, command), reciver);
+            var autoComplete = new AutoCompleteStream(command, reciver);
             if (commands.TryGetValue(autoComplete.CommandStream.Name, out CommandDefination def))
             {
                 try
@@ -462,7 +462,7 @@ namespace Game
 
             foreach (string name in commands.Keys)
             {
-                commandUsage[name] = commands[name].Usage;
+                commandUsage[commands[name].Usage] = name;
             }
         }
 

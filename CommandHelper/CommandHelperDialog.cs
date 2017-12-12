@@ -18,7 +18,7 @@ namespace Game
         {
             commandEngine = engine;
 
-            XElement node = ContentManager.Get<XElement>("Dialogs/EditMemoryBankDialog");
+            XElement node = ContentManager.Get<XElement>("Dialogs/CommandHelperDialog");
             WidgetsManager.LoadWidgetContents(this, this, node);
             animals = Children.Find<ButtonWidget>("CommandHelperDialog.ShowAnimals");
             blocks = Children.Find<ButtonWidget>("CommandHelperDialog.ShowBlocks");

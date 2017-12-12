@@ -38,6 +38,7 @@
     <Compile Include="CommandHelper\CommandHelperDialog.cs" />
     <Compile Include="CommandBlock\CommandStream.cs" />
     <Compile Include="CommandBlock\AutoCompleteStream.cs" />
+    <Compile Include="CommandBlock\EditCommandBlockDialog.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Engine">
