@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Text;
 using System.Reflection;
@@ -17,10 +18,22 @@ namespace Game
         SubsystemTerrain subsystemTerrain;
         SubsystemSky subsystemSky;
         SubsystemTimeOfDay subsystemTime;
-        readonly Dictionary<string, Action<CommandStream>> commandLib = new Dictionary<string, Action<CommandStream>>();
+
+        struct CommandDefination
+        {
+            public string Usage;
+            public Action<CommandStream> Operation;
+            public Action<AutoCompleteStream> AutoComplete;
+        }
+
+        readonly Dictionary<string, CommandDefination> commands = new Dictionary<string, CommandDefination>();
+        readonly Dictionary<string, string> commandUsage = new Dictionary<string, string>();
+
         readonly Dictionary<string, Point3> storedPoints = new Dictionary<string, Point3>();
 
         readonly Dictionary<string, int> creatureDatas = new Dictionary<string, int>();
+
+        static string[] enumCreatureType = { "@a", "@r", "@p", "@e" };
 
         protected override void Load(TemplatesDatabase.ValuesDictionary valuesDictionary)
         {
@@ -78,16 +91,16 @@ namespace Game
         {
             try
             {
-                if (commandLib.TryGetValue(stream.Name, out Action<CommandStream> action))
+                if (commands.TryGetValue(stream.Name, out CommandDefination defination))
                 {
-                    action.Invoke(stream);
+                    defination.Operation.Invoke(stream);
                     return true;
                 }
                 throw new Exception("command not found");
             }
             catch (Exception e)
             {
-                if (!(e is SilenceException))
+                if (!(e is SilentException))
                 {
                     Log.Error(string.Format("{0} : {1}\n{2}", stream.Name, e.Message, e.StackTrace));
                     string str = string.Format("{0} : {1}", stream.Name, e.Message);
@@ -100,233 +113,357 @@ namespace Game
             }
         }
 
+        public void AutoCompleteCommand(string command, AutoCompleteStream.IAutoCompleteReciver reciver)
+        {
+            if (command == string.Empty)
+            {
+                reciver.ProvideEnum(commands.Keys);
+                return;
+            }
+            var autoComplete = new AutoCompleteStream(new CommandStream(null, Point3.Zero, command), reciver);
+            if (commands.TryGetValue(autoComplete.CommandStream.Name, out CommandDefination def))
+            {
+                try
+                {
+                    def.AutoComplete(autoComplete);
+                }
+                catch (SilentException)
+                {
+                }
+            }
+            else
+            {
+                reciver.CompleteEnum(autoComplete.CommandStream.Name, commands.Keys);
+            }
+        }
+
         void InitCommands()
         {
-            commandLib.Add("msg", (obj) =>
+            commands["msg"] = new CommandDefination
             {
-                string type = obj.NextString();
-                string msg = obj.NextString();
-                bool b1 = obj.NextBool(true);
-                bool b2 = obj.NextBool(true);
-                FindPlayer(type, obj, (a) =>
+                Usage = "msg @a/r/p/e <string> [bool=true] [bool=true]",
+                AutoComplete = (obj) => obj.Enum(enumCreatureType).String().Bool().Bool(),
+                Operation = (obj) =>
                 {
-                    a.ComponentGui.DisplaySmallMessage(msg, b1, b2);
-                });
-            });
-
-            commandLib.Add("msgl", (obj) =>
-            {
-                string type = obj.NextString();
-                string m1 = obj.NextString();
-                string m2 = obj.NextString();
-                float f1 = obj.NextFloat(5);
-                float f2 = obj.NextFloat(0);
-                FindPlayer(type, obj, (a) =>
-                {
-                    a.ComponentGui.DisplayLargeMessage(m1, m2, f1, f2);
-                });
-            });
-
-            commandLib.Add("kill", (obj) =>
-            {
-                string type = obj.NextString();
-                string reason = obj.NextString("magic");
-                EnumCreatures(type, obj, (c) =>
-                {
-                    c.ComponentHealth.Injure(1, null, true, reason);
-                });
-            });
-
-            commandLib.Add("health", (obj) =>
-            {
-                string type = obj.NextString();
-                string type2 = obj.NextString();
-                switch (type)
-                {
-                    case "heal":
-                        float amount1 = obj.NextFloat(1);
-                        obj.Creature.ComponentHealth.Heal(amount1);
-                        break;
-                    case "injure":
-                        float amount = obj.NextFloat(1);
-                        string reason = obj.NextString("magic");
-                        obj.Creature.ComponentHealth.Injure(amount, null, true, reason);
-                        break;
-                    default:
-                        throw new Exception("usage: health heal/injure [float=1] [string=magic]");
-                }
-            });
-
-            commandLib.Add("strike", (obj) =>
-            {
-                subsystemSky.MakeLightningStrike(obj.NextVector3());
-            });
-
-            commandLib.Add("setblock", (s) =>
-            {
-                var p = s.NextPoint3();
-                subsystemTerrain.ChangeCell(p.X, p.Y, p.Z, s.NextInt());
-            });
-
-            commandLib.Add("placeblock", (obj) =>
-            {
-                var p = obj.NextPoint3();
-                var val = obj.NextInt();
-                var b = obj.NextBool(false);
-                var b2 = obj.NextBool(false);
-                subsystemTerrain.DestroyCell(2, p.X, p.Y, p.Z, obj.NextInt(), obj.NextBool(false), obj.NextBool(false));
-            });
-
-            commandLib.Add("fill", (obj) =>
-            {
-                var p1 = obj.NextPoint3();
-                var p2 = obj.NextPoint3();
-                var startx = Math.Min(p1.X, p2.X);
-                var endx = Math.Max(p1.X, p2.X);
-                var starty = Math.Min(p1.Y, p2.Y);
-                var endy = Math.Max(p1.Y, p2.Y);
-                var startz = Math.Min(p1.Z, p2.Z);
-                var endz = Math.Max(p1.Z, p2.Z);
-
-                var val = obj.NextInt();
-
-                for (int x = startx; x <= endx; x++)
-                {
-                    for (int y = starty; y <= endy; y++)
+                    string type = obj.NextString();
+                    string msg = obj.NextString();
+                    bool b1 = obj.NextBool(true);
+                    bool b2 = obj.NextBool(true);
+                    FindPlayer(type, obj, (a) =>
                     {
-                        for (int z = startz; z <= endz; z++)
+                        a.ComponentGui.DisplaySmallMessage(msg, b1, b2);
+                    });
+                }
+            };
+
+            commands["msgl"] = new CommandDefination
+            {
+                Usage = "msgl @a/r/p/e <string> <string> <string> [float=5] [float=0]",
+                AutoComplete = (obj) => obj.Enum(enumCreatureType).String().String().Float().Float(),
+                Operation = (obj) =>
+                {
+                    string type = obj.NextString();
+                    string m1 = obj.NextString();
+                    string m2 = obj.NextString();
+                    float f1 = obj.NextFloat(5);
+                    float f2 = obj.NextFloat(0);
+                    FindPlayer(type, obj, (a) =>
+                    {
+                        a.ComponentGui.DisplayLargeMessage(m1, m2, f1, f2);
+                    });
+                }
+            };
+
+            commands["kill"] = new CommandDefination
+            {
+                Usage = "kill @a/r/p/e [string=magic]",
+                AutoComplete = (obj) => obj.Enum(enumCreatureType).String(),
+                Operation = (obj) =>
+                {
+                    string type = obj.NextString();
+                    string reason = obj.NextString("magic");
+                    EnumCreatures(type, obj, (c) =>
+                    {
+                        c.ComponentHealth.Injure(1, null, true, reason);
+                    });
+                }
+            };
+
+            commands["health"] = new CommandDefination
+            {
+                Usage = "health heal/injure [float=1] [string=magic]",
+                AutoComplete = (obj) => obj.Enum(new string[] { "heal", "injure" }).Float().String(),
+                Operation = (obj) =>
+                {
+                    string type = obj.NextString();
+                    switch (type)
+                    {
+                        case "heal":
+                            float amount1 = obj.NextFloat(1);
+                            obj.Creature.ComponentHealth.Heal(amount1);
+                            break;
+                        case "injure":
+                            float amount = obj.NextFloat(1);
+                            string reason = obj.NextString("magic");
+                            obj.Creature.ComponentHealth.Injure(amount, null, true, reason);
+                            break;
+                        default:
+                            throw new Exception("usage: health heal/injure [float=1] [string=magic]");
+                    }
+                }
+            };
+
+            commands["strike"] = new CommandDefination
+            {
+                Usage = "strike <vector3>",
+                AutoComplete = (obj) => obj.Vector3(),
+                Operation = (obj) =>
+                {
+                    subsystemSky.MakeLightningStrike(obj.NextVector3());
+                }
+            };
+
+            commands["setblock"] = new CommandDefination
+            {
+                Usage = "setblock <point3> <int>",
+                AutoComplete = (obj) => obj.Point3().Int(),
+                Operation = (s) =>
+                {
+                    var p = s.NextPoint3();
+                    subsystemTerrain.ChangeCell(p.X, p.Y, p.Z, s.NextInt());
+                }
+            };
+
+            commands["place"] = new CommandDefination
+            {
+                Usage = "place <point3> <int> [bool=false] [bool=false]",
+                AutoComplete = (obj) => obj.Point3().Int().Bool().Bool(),
+                Operation = (obj) =>
+                {
+                    var p = obj.NextPoint3();
+                    subsystemTerrain.DestroyCell(2, p.X, p.Y, p.Z, obj.NextInt(), obj.NextBool(false), obj.NextBool(false));
+                }
+            };
+
+            commands["fill"] = new CommandDefination
+            {
+                Usage = "fill <point3> <point3>",
+                AutoComplete = (obj) => obj.Point3().Point3().Int(),
+                Operation = (obj) =>
+                {
+                    var p1 = obj.NextPoint3();
+                    var p2 = obj.NextPoint3();
+                    var startx = Math.Min(p1.X, p2.X);
+                    var endx = Math.Max(p1.X, p2.X);
+                    var starty = Math.Min(p1.Y, p2.Y);
+                    var endy = Math.Max(p1.Y, p2.Y);
+                    var startz = Math.Min(p1.Z, p2.Z);
+                    var endz = Math.Max(p1.Z, p2.Z);
+
+                    var val = obj.NextInt();
+
+                    for (int x = startx; x <= endx; x++)
+                    {
+                        for (int y = starty; y <= endy; y++)
                         {
-                            subsystemTerrain.Terrain.SetCellValueFast(x, y, z, val);
+                            for (int z = startz; z <= endz; z++)
+                            {
+                                subsystemTerrain.Terrain.SetCellValueFast(x, y, z, val);
+                            }
+                        }
+                    }
+
+                    var startChunk = Terrain.ToChunk(startx, startz);
+                    var endChunk = Terrain.ToChunk(endx, endz);
+
+                    for (int x = startChunk.X; x <= endChunk.X; x++)
+                    {
+                        for (int y = startChunk.Y; y <= endChunk.Y; y++)
+                        {
+                            var c = subsystemTerrain.Terrain.GetChunkAtCoords(x, y);
+                            if (c != null)
+                            {
+                                subsystemTerrain.TerrainUpdater.DowngradeChunkNeighborhoodState(c.Coords, 1, TerrainChunkState.InvalidLight, false);
+                            }
                         }
                     }
                 }
+            };
 
-                var startChunk = Terrain.ToChunk(startx, startz);
-                var endChunk = Terrain.ToChunk(endx, endz);
-
-                for (int x = startChunk.X; x <= endChunk.X; x++)
+            commands["time"] = new CommandDefination
+            {
+                Usage = "time add/set <float>",
+                AutoComplete = (obj) => obj.Enum(new string[] { "add", "set" }).Float(),
+                Operation = (obj) =>
                 {
-                    for (int y = startChunk.Y; y <= endChunk.Y; y++)
+                    switch (obj.NextString())
                     {
-                        var c = subsystemTerrain.Terrain.GetChunkAtCoords(x, y);
-                        if (c != null)
+                        case "add":
+                            subsystemTime.TimeOfDayOffset += obj.NextFloat();
+                            break;
+                        case "set":
+                            subsystemTime.TimeOfDayOffset = obj.NextFloat();
+                            break;
+                        default:
+                            throw new Exception("usage: time add/set <float>");
+                    }
+                }
+            };
+
+            commands["execute"] = new CommandDefination
+            {
+                Usage = "execute @a/r/p/e <another command>",
+                AutoComplete = (obj) =>
+                {
+                    obj.Enum(enumCreatureType);
+                    AutoCompleteCommand(obj.CommandStream.GetAllLeft(), obj.Reciver);
+                },
+                Operation = (obj) =>
+                {
+                    var type = obj.NextString();
+                    var command = obj.GetAllLeft();
+
+                    EnumCreatures(type, obj, (a) =>
+                    {
+                        RunCommand(a, command);
+                    });
+                }
+            };
+
+            commands["setdata"] = new CommandDefination
+            {
+                Usage = "setdata <creature data> <data type>",
+                AutoComplete = (obj) =>
+                {
+                    obj.Enum(creatureDatas.Keys);
+                    string component = obj.CommandStream.Last;
+                    int i = creatureDatas[component];
+                    switch (i)
+                    {
+                        case 0:
+                            obj.Any(typeof(ComponentLocomotion).GetProperty(component).PropertyType);
+                            break;
+                        case 1:
+                            obj.Any(typeof(ComponentHealth).GetProperty(component).PropertyType);
+                            break;
+                        case 2:
+                            obj.Any(typeof(ComponentBody).GetProperty(component).PropertyType);
+                            break;
+                    }
+                },
+                Operation = (s) =>
+                {
+                    while (s.HasNext)
+                    {
+                        var component = s.NextString();
+                        PropertyInfo p;
+                        if (creatureDatas.TryGetValue(component, out int i))
                         {
-                            subsystemTerrain.TerrainUpdater.DowngradeChunkNeighborhoodState(c.Coords, 1, TerrainChunkState.InvalidLight, false);
+                            switch (i)
+                            {
+                                case 0:
+                                    p = typeof(ComponentLocomotion).GetProperty(component);
+                                    p.SetValue(s.Creature.ComponentLocomotion, s.Next(p.PropertyType), null);
+                                    break;
+                                case 1:
+                                    p = typeof(ComponentHealth).GetProperty(component);
+                                    p.SetValue(s.Creature.ComponentHealth, s.Next(p.PropertyType), null);
+                                    break;
+                                case 2:
+                                    p = typeof(ComponentBody).GetProperty(component);
+                                    p.SetValue(s.Creature.ComponentBody, s.Next(p.PropertyType), null);
+                                    break;
+                            }
+                        }
+                        else
+                        {
+                            throw new Exception(component + " is not a creature data");
                         }
                     }
                 }
-            });
+            };
 
-            commandLib.Add("time", (obj) =>
+            commands["gameinfo"] = new CommandDefination
             {
-                switch (obj.NextString())
+                Usage = "gameinfo <info name> <info value>",
+                AutoComplete = (obj) =>
                 {
-                    case "add":
-                        subsystemTime.TimeOfDayOffset += obj.NextFloat();
-                        break;
-                    case "set":
-                        subsystemTime.TimeOfDayOffset = obj.NextFloat();
-                        break;
-                    default:
-                        throw new Exception("usage: time add/set <float>");
-                }
-            });
-
-            commandLib.Add("execute", (obj) =>
-            {
-                var type = obj.NextString();
-                var stringBuilder = new StringBuilder(obj.NextString());
-                while (obj.HasNext())
+                    Type settings = typeof(WorldSettings);
+                    obj.Enum(settings.GetFields().Select(f => f.Name));
+                    obj.Any(settings.GetField(obj.CommandStream.Last).FieldType);
+                },
+                Operation = (s) =>
                 {
-                    stringBuilder.Append(' ');
-                    stringBuilder.Append(obj.NextString());
-                }
-                var command = stringBuilder.ToString();
-
-                EnumCreatures(type, obj, (a) =>
-                {
-                    RunCommand(a, command);
-                });
-            });
-
-            commandLib.Add("setdata", (s) =>
-            {
-                while (s.HasNext())
-                {
-                    var component = s.NextString();
-                    var value = s.NextString();
-                    PropertyInfo p;
-                    if (creatureDatas.TryGetValue(component, out int i))
+                    var setting = s.NextString();
+                    var val = s.NextString();
+                    var f = typeof(WorldSettings).GetField(setting);
+                    if (f != null)
                     {
-                        switch (i)
-                        {
-                            case 0:
-                                p = typeof(ComponentLocomotion).GetProperty(component);
-                                p.SetValue(s.Creature.ComponentLocomotion, ChangeType(value, p.PropertyType), null);
-                                break;
-                            case 1:
-                                p = typeof(ComponentHealth).GetProperty(component);
-                                p.SetValue(s.Creature.ComponentHealth, ChangeType(value, p.PropertyType), null);
-                                break;
-                            case 2:
-                                p = typeof(ComponentBody).GetProperty(component);
-                                p.SetValue(s.Creature.ComponentBody, ChangeType(value, p.PropertyType), null);
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        throw new Exception(component + " is not a creature data");
+                        f.SetValue(GameManager.WorldInfo.WorldSettings, ChangeType(val, f.FieldType));
                     }
                 }
-            });
+            };
 
-            commandLib.Add("gameinfo", (s) =>
+            commands["summon"] = new CommandDefination
             {
-                var setting = s.NextString();
-                var val = s.NextString();
-                var f = typeof(WorldSettings).GetField(setting);
-                if (f != null)
+                Usage = "summon <animal name> <vector3> [float=0]",
+                AutoComplete = (obj) => obj.String().Vector3().Float(),
+                Operation = (s) =>
                 {
-                    f.SetValue(GameManager.WorldInfo.WorldSettings, ChangeType(val, f.FieldType));
+                    var name = s.NextString();
+                    var position = s.NextVector3();
+                    var rotation = s.NextFloat(0);
+                    Entity entity = DatabaseManager.CreateEntity(Project, creatureTemplateNames[name], true);
+                    entity.FindComponent<ComponentBody>(true).Position = position;
+                    entity.FindComponent<ComponentBody>(true).Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, rotation);
+                    entity.FindComponent<ComponentSpawn>(true).SpawnDuration = 0.25f;
+                    Project.AddEntity(entity);
                 }
-            });
+            };
 
-            commandLib.Add("summon", (s) =>
+            commands["tp"] = new CommandDefination
             {
-                var name = s.NextString();
-                var position = s.NextVector3();
-                var rotation = s.NextFloat(0);
-                Entity entity = DatabaseManager.CreateEntity(Project, creatureTemplateNames[name], true);
-                entity.FindComponent<ComponentBody>(true).Position = position;
-                entity.FindComponent<ComponentBody>(true).Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, rotation);
-                entity.FindComponent<ComponentSpawn>(true).SpawnDuration = 0.25f;
-                Project.AddEntity(entity);
-            });
+                Usage = "tp <vector3>",
+                AutoComplete = (obj) => obj.Vector3(),
+                Operation = s => s.Creature.ComponentBody.Position = s.NextVector3()
+            };
 
-            commandLib.Add("tp", s => s.Creature.ComponentBody.Position = s.NextVector3());
-
-            commandLib.Add("additem", s =>
+            commands["additem"] = new CommandDefination
             {
-                var position = s.NextVector3();
-                var val = s.NextInt();
-                var count = s.NextInt(1);
-                Vector3? speed = null;
-                if (s.HasNext())
+                Usage = "additem <vector3> <int> [int=1] [vector=0,0,0]",
+                AutoComplete = (obj) => obj.Vector3().Int().Int().Vector3(),
+                Operation = s =>
                 {
-                    speed = s.NextVector3();
+                    var position = s.NextVector3();
+                    var val = s.NextInt();
+                    var count = s.NextInt(1);
+                    Vector3? speed = null;
+                    if (s.HasNext)
+                    {
+                        speed = s.NextVector3();
+                    }
+                    Project.FindSubsystem<SubsystemPickables>(true).AddPickable(s.NextInt(), s.NextInt(1), position, speed, null);
                 }
-                Project.FindSubsystem<SubsystemPickables>(true).AddPickable(s.NextInt(), s.NextInt(1), position, speed, null);
-            });
+            };
 
-            commandLib.Add("give", s =>
+            commands["give"] = new CommandDefination
             {
-                var enumType = s.NextString();
-                var val = s.NextInt();
-                var count = s.NextInt(1);
+                Usage = "give @a/r/p/e <int> [int=1]",
+                AutoComplete = (obj) => obj.Enum(enumCreatureType).Int().Int(),
+                Operation = s =>
+                {
+                    var enumType = s.NextString();
+                    var val = s.NextInt();
+                    var count = s.NextInt(1);
 
-                FindPlayer(enumType, s, (p) => ComponentInventoryBase.AcquireItems(p.ComponentMiner.Inventory, val, count));
-            });
+                    FindPlayer(enumType, s, (p) => ComponentInventoryBase.AcquireItems(p.ComponentMiner.Inventory, val, count));
+                }
+            };
+
+            foreach (string name in commands.Keys)
+            {
+                commandUsage[name] = commands[name].Usage;
+            }
         }
 
         void LoadBlockIds()
@@ -370,7 +507,7 @@ namespace Game
                 }
                 else
                 {
-                    throw ExceptionHelper.WrongArgumentType(name, "player");
+                    throw new WrongArgTypeException(name, "player");
                 }
             }
         }
@@ -394,21 +531,21 @@ namespace Game
         {
             foreach (PropertyInfo p in typeof(ComponentLocomotion).GetRuntimeProperties())
             {
-                if (Engine.Serialization.HumanReadableConverter.IsTypeSupported(p.PropertyType))
+                if (CommandStream.IsTypeSupported(p.PropertyType))
                 {
                     creatureDatas[p.Name] = 0;
                 }
             }
             foreach (PropertyInfo p in typeof(ComponentHealth).GetRuntimeProperties())
             {
-                if (Engine.Serialization.HumanReadableConverter.IsTypeSupported(p.PropertyType))
+                if (CommandStream.IsTypeSupported(p.PropertyType))
                 {
                     creatureDatas[p.Name] = 1;
                 }
             }
             foreach (PropertyInfo p in typeof(ComponentBody).GetRuntimeProperties())
             {
-                if (Engine.Serialization.HumanReadableConverter.IsTypeSupported(p.PropertyType))
+                if (CommandStream.IsTypeSupported(p.PropertyType))
                 {
                     creatureDatas[p.Name] = 2;
                 }
@@ -815,372 +952,21 @@ namespace Game
         }
     }
 
-    class CommandStream
+    public class ArgNotFoundException : Exception
     {
-        bool hasCreature;
-        readonly Point3? exePosition;
-
-        public Point3 ExePosition
-        {
-            get
-            {
-                if (hasCreature)
-                {
-                    return SubsystemCommandEngine.ToPoint3(m_creature.ComponentBody.Position);
-                }
-                return exePosition.Value;
-            }
-        }
-
-        public ComponentCreature Creature
-        {
-            get
-            {
-                if (hasCreature)
-                {
-                    return m_creature;
-                }
-                throw new Exception("command is not executed by a creature");
-            }
-        }
-        readonly ComponentCreature m_creature;
-
-        public string Name
-        {
-            get
-            {
-                return m_commands[0];
-            }
-        }
-
-        string[] m_commands;
-        int m_position = 1;
-
-        public string Current
-        {
-            get
-            {
-                return m_commands[m_position];
-            }
-        }
-
-        public string[] Commands
-        {
-            get
-            {
-                return m_commands;
-            }
-        }
-
-        public CommandStream(ComponentCreature creature, Point3? exePosition, string command)
-        {
-            m_commands = GetCommands(command);
-            m_creature = creature;
-            this.exePosition = exePosition;
-            hasCreature = creature != null;
-        }
-
-        public bool HasNext()
-        {
-            return m_position < m_commands.Length;
-        }
-
-        public string Peek()
-        {
-            if (HasNext())
-            {
-                var s = m_commands[m_position];
-                return s;
-            }
-            return string.Empty;
-        }
-
-        string NextArg(string type)
-        {
-            if (HasNext())
-            {
-                var s = m_commands[m_position++];
-                return s;
-            }
-            throw new ArgumentNotFoundException(type, m_commands[m_position - 1]);
-        }
-
-        public string NextString()
-        {
-            return NextArg("string");
-        }
-
-        public string NextString(string def)
-        {
-            try
-            {
-                return NextString();
-            }
-            catch (ArgumentNotFoundException)
-            {
-                return def;
-            }
-        }
-
-        public bool NextBool()
-        {
-            try
-            {
-                return bool.Parse(NextArg("boolean"));
-            }
-            catch (FormatException)
-            {
-                throw ExceptionHelper.WrongArgumentType(m_commands[m_position - 1], "boolean");
-            }
-        }
-
-        public bool NextBool(bool def)
-        {
-            try
-            {
-                return NextBool();
-            }
-            catch (ArgumentNotFoundException)
-            {
-                return def;
-            }
-        }
-
-        public int NextInt()
-        {
-            return ExceptionHelper.ParseInt(NextArg("integer"));
-        }
-
-        public int NextInt(int def)
-        {
-            try
-            {
-                return NextInt();
-            }
-            catch (ArgumentNotFoundException)
-            {
-                return def;
-            }
-        }
-
-        public float NextFloat()
-        {
-            return ExceptionHelper.ParseFloat(NextArg("float"));
-        }
-
-        public float NextFloat(float def)
-        {
-            try
-            {
-                return NextFloat();
-            }
-            catch (ArgumentNotFoundException)
-            {
-                return def;
-            }
-        }
-
-        public Point3 PeekPoint()
-        {
-            var p = NextPoint3();
-            m_position -= 3;
-            return p;
-        }
-
-        public Vector3 NextVector3()
-        {
-            Vector3 result = new Vector3();
-            string str;
-
-            Vector3 src;
-            if (hasCreature)
-            {
-                src = m_creature.ComponentBody.Position;
-            }
-            else
-            {
-                src = new Vector3(exePosition.Value);
-            }
-
-            str = NextString();
-            if (str[0] == '~')
-            {
-                if (str.Length == 1)
-                {
-                    result.X = src.X;
-                }
-                else
-                {
-                    result.X = src.X + ExceptionHelper.ParseFloat(str.Substring(1));
-                }
-            }
-            else
-            {
-                result.X = ExceptionHelper.ParseFloat(str);
-            }
-
-            str = NextString();
-            if (str[0] == '~')
-            {
-                if (str.Length == 1)
-                {
-                    result.Y = src.Y;
-                }
-                else
-                {
-                    result.Y = src.Y + ExceptionHelper.ParseFloat(str.Substring(1));
-                }
-            }
-            else
-            {
-                result.Y = ExceptionHelper.ParseFloat(str);
-            }
-
-            str = NextString();
-            if (str[0] == '~')
-            {
-                if (str.Length == 1)
-                {
-                    result.Z = src.Z;
-                }
-                else
-                {
-                    result.Z = src.Z + ExceptionHelper.ParseFloat(str.Substring(1));
-                }
-            }
-            else
-            {
-                result.Z = ExceptionHelper.ParseFloat(str);
-            }
-            return result;
-        }
-
-        public Point3 NextPoint3()
-        {
-            Point3 result = new Point3();
-            string str;
-
-            Point3 src = ExePosition;
-
-            str = NextString();
-            if (str[0] == '~')
-            {
-                if (str.Length == 1)
-                {
-                    result.X = src.X;
-                }
-                else
-                {
-                    result.X = src.X + ExceptionHelper.ParseInt(str.Substring(1));
-                }
-            }
-            else
-            {
-                result.X = ExceptionHelper.ParseInt(str);
-            }
-
-            str = NextString();
-            if (str[0] == '~')
-            {
-                if (str.Length == 1)
-                {
-                    result.Y = src.Y;
-                }
-                else
-                {
-                    result.Y = src.Y + ExceptionHelper.ParseInt(str.Substring(1));
-                }
-            }
-            else
-            {
-                result.Y = ExceptionHelper.ParseInt(str);
-            }
-
-            str = NextString();
-            if (str[0] == '~')
-            {
-                if (str.Length == 1)
-                {
-                    result.Z = src.Z;
-                }
-                else
-                {
-                    result.Z = src.Z + ExceptionHelper.ParseInt(str.Substring(1));
-                }
-            }
-            else
-            {
-                result.Z = ExceptionHelper.ParseInt(str);
-            }
-            return result;
-        }
-
-        string[] GetCommands(string source)
-        {
-            var result = new List<string>();
-            var str = new StringBuilder();
-            bool ignore = false;
-            for (int i = 0; i < source.Length; i++)
-            {
-                switch (source[i])
-                {
-                    case ' ':
-                        if (ignore)
-                        {
-                            str.Append(' ');
-                            break;
-                        }
-                        result.Add(str.ToString());
-                        str.Clear();
-                        break;
-                    case '"':
-                        if (ignore)
-                        {
-                            result.Add(str.ToString());
-                            str.Clear();
-                            i++;
-                        }
-                        ignore = !ignore;
-                        break;
-                    case '\\':
-                        switch (source[++i])
-                        {
-                            case 'n':
-                                str.Append('\n');
-                                break;
-                            case 'r':
-                                str.Append('\r');
-                                break;
-                            case 't':
-                                str.Append('\t');
-                                break;
-                            case '"':
-                                str.Append('"');
-                                break;
-                            case ' ':
-                                str.Append(' ');
-                                break;
-                        }
-                        break;
-                    default:
-                        str.Append(source[i]);
-                        break;
-                }
-            }
-            result.Add(str.ToString());
-            result.RemoveAll((string obj) => obj.Equals(string.Empty));
-            return result.ToArray();
-        }
-    }
-
-    public class ArgumentNotFoundException : Exception
-    {
-        public ArgumentNotFoundException(string type, string lastPart) : base(string.Format("another {0} is expected after {1}", type, lastPart))
+        public ArgNotFoundException(string type, string lastPart) : base(string.Format("another {0} is expected after {1}", type, lastPart))
         {
         }
     }
 
-    public class SilenceException : Exception
+    public class WrongArgTypeException : Exception
+    {
+        public WrongArgTypeException(string name, string type) : base(string.Format("{0} is not a {1}", name, type))
+        {
+        }
+    }
+
+    public class SilentException : Exception
     {
     }
 
@@ -1202,7 +988,7 @@ namespace Game
             }
             catch (FormatException)
             {
-                throw WrongArgumentType(s, "integer");
+                throw new WrongArgTypeException(s, "integer");
             }
         }
 
@@ -1214,13 +1000,8 @@ namespace Game
             }
             catch (FormatException)
             {
-                throw WrongArgumentType(s, "float");
+                throw new WrongArgTypeException(s, "float");
             }
-        }
-
-        public static Exception WrongArgumentType(string name, string type)
-        {
-            return new Exception(name + " is not a " + type);
         }
     }
 }

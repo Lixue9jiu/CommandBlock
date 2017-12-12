@@ -36,6 +36,8 @@
     <Compile Include="CommandHelper\SubsystemCommandHelperBehavior.cs" />
     <Compile Include="CommandHelper\CommandHelper.cs" />
     <Compile Include="CommandHelper\CommandHelperDialog.cs" />
+    <Compile Include="CommandBlock\CommandStream.cs" />
+    <Compile Include="CommandBlock\AutoCompleteStream.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Engine">
